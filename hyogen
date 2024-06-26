@@ -1,0 +1,243 @@
+let mov;
+let logdata;
+let currentRow = 0;
+let yoshiSound, uwaSound;
+let audioContext;
+let isVideoLoaded = false;
+let isDataLoaded = false;
+let playPauseButton;
+let soundToggleButton;
+let seekSlider;
+let film;
+let fx, fy, fw, fh;
+let isSoundEnabled = true;
+let currentSound = null;
+let currentContent;
+let isAudioInitialized = false;
+let isUserSeeking = false;
+
+function preload() {
+  loadTable("./transcription_.csv", "csv", "header", 
+    (table) => {
+      logdata = table;
+      isDataLoaded = true;
+      console.log("CSV data loaded successfully");
+    },
+    (error) => console.error("Failed to load CSV:", error),
+    'utf-8'
+  );
+  
+  soundFormats('mp3');
+  yoshiSound = loadSound("./yoshi_bgm.mp3", 
+    () => console.log("yoshi_bgm.mp3 loaded successfully"),
+    (err) => console.error("Failed to load yoshi_bgm.mp3:", err)
+  );
+  uwaSound = loadSound("./uwa_bgm.mp3", 
+    () => console.log("uwa_bgm.mp3 loaded successfully"),
+    (err) => console.error("Failed to load uwa_bgm.mp3:", err)
+  );
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  background(200);
+  
+  audioContext = getAudioContext();
+  
+  input = createFileInput(handleFile);
+  input.position(0, 0);
+  
+  playPauseButton = createButton('Play');
+  playPauseButton.position(0, 30);
+  playPauseButton.mousePressed(togglePlayback);
+  
+  soundToggleButton = createButton('Toggle Sound');
+  soundToggleButton.position(60, 30);
+  soundToggleButton.mousePressed(toggleSound);
+  updateSoundToggleButtonColor();
+  
+  let initAudioButton = createButton('Initialize Audio');
+  initAudioButton.position(180, 30);
+  initAudioButton.mousePressed(initializeAudio);
+  
+  seekSlider = createSlider(0, 100, 0, 0.1);
+  seekSlider.position(0, 60);
+  seekSlider.style('width', '300px');
+  seekSlider.input(userSeeking);
+  seekSlider.changed(userSeeked);
+  
+  noLoop();
+}
+
+function initializeAudio() {
+  userStartAudio().then(() => {
+    console.log('Audio initialized successfully');
+    isAudioInitialized = true;
+    updateSoundToggleButtonColor();
+  }).catch(err => {
+    console.error('Failed to initialize audio:', err);
+  });
+}
+
+function toggleSound() {
+  isSoundEnabled = !isSoundEnabled;
+  if (!isSoundEnabled) {
+    stopSounds();
+  }
+  updateSoundToggleButtonColor();
+}
+
+function updateSoundToggleButtonColor() {
+  if (isAudioInitialized && isSoundEnabled) {
+    soundToggleButton.style('background-color', '#4CAF50');  // Green when sound is on
+    soundToggleButton.style('color', 'white');
+  } else {
+    soundToggleButton.style('background-color', '#f44336');  // Red when sound is off
+    soundToggleButton.style('color', 'white');
+  }
+}
+
+function handleFile(file) {
+  if (file.type === 'video') {
+    film = createVideo(file.data, vidLoad);
+    film.hide();
+  }
+}
+
+function vidLoad() {
+  console.log('Video loaded successfully');
+  isVideoLoaded = true;
+  resizeVideo();
+  input.hide();
+  playPauseButton.html('Play');
+  seekSlider.attribute('max', film.duration());
+}
+
+function resizeVideo() {
+  var ratio = width / height;
+  var fratio = film.width / film.height;
+  if (ratio > fratio) {
+    fh = height;
+    fw = film.width * (height / film.height);
+    fy = 0;
+    fx = width / 2 - fw / 2;
+  } else {
+    fw = width;
+    fh = film.height * (width / film.width);
+    fy = height / 2 - fh / 2;
+    fx = 0;
+  }
+}
+
+function togglePlayback() {
+  if (!isVideoLoaded) {
+    console.log('Video is not loaded yet. Please select a file first.');
+    return;
+  }
+  
+  if (film.elt.paused) {
+    startPlayback();
+  } else {
+    pausePlayback();
+  }
+}
+
+function startPlayback() {
+  audioContext.resume().then(() => {
+    console.log('AudioContext resumed successfully');
+    film.play();
+    playPauseButton.html('Pause');
+    loop();
+  });
+}
+
+function pausePlayback() {
+  if (isVideoLoaded && !film.elt.paused) {
+    film.pause();
+    playPauseButton.html('Play');
+    noLoop();
+    stopSounds();
+  }
+}
+
+function userSeeking() {
+  isUserSeeking = true;
+}
+
+function userSeeked() {
+  if (isVideoLoaded) {
+    let seekTime = seekSlider.value();
+    film.time(seekTime);
+    currentRow = 0;  // Reset the current row
+    stopSounds();
+    isUserSeeking = false;
+    if (!film.elt.paused) {
+      loop();
+    }
+  }
+}
+
+function draw() {
+  if (!isVideoLoaded || !isDataLoaded) return;
+  
+  background(0);
+  image(film, fx, fy, fw, fh);
+  
+  let currentTime = film.time();
+  
+  if (!isUserSeeking) {
+    seekSlider.value(currentTime);
+  }
+  
+  if (logdata && currentRow < logdata.getRowCount()) {
+    let startTime = logdata.getNum(currentRow, 0);
+    let endTime = logdata.getNum(currentRow, 1);
+    currentContent = logdata.getString(currentRow, 2);
+    
+    if (currentTime >= startTime && currentTime < endTime) {
+      playSoundBasedOnText(currentContent);
+      fill(255);
+      textSize(20);
+      text(`Current content: ${currentContent}`, 30, 120);
+    } else if (currentTime >= endTime) {
+      currentRow++;
+      stopSounds();
+    }
+  }
+  
+  fill(255);
+  textSize(16);
+  text(`Current time: ${currentTime.toFixed(2)}`, 30, 150);
+}
+
+function playSoundBasedOnText(content) {
+  if (!isSoundEnabled) return;
+  
+  let newSound = null;
+  if (content.includes("うわ")) {
+    newSound = uwaSound;
+  } else if (content.includes("よし")) {
+    newSound = yoshiSound;
+  }
+  
+  if (newSound && newSound !== currentSound) {
+    stopSounds();
+    newSound.loop();
+    currentSound = newSound;
+    updateSoundToggleButtonColor();
+  }
+}
+
+function stopSounds() {
+  if (yoshiSound.isPlaying()) yoshiSound.stop();
+  if (uwaSound.isPlaying()) uwaSound.stop();
+  currentSound = null;
+  updateSoundToggleButtonColor();
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  if (isVideoLoaded) {
+    resizeVideo();
+  }
+}
