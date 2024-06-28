@@ -1,4 +1,3 @@
-let mov;
 let logdata;
 let currentRow = 0;
 let yoshiSound, uwaSound;
@@ -8,31 +7,31 @@ let isDataLoaded = false;
 let playPauseButton;
 let soundToggleButton;
 let seekSlider;
+let volumeSlider;
 let film;
 let fx, fy, fw, fh;
-let isSoundEnabled = true;
+let isSoundEnabled = false;
 let currentSound = null;
 let currentContent;
 let isAudioInitialized = false;
 let isUserSeeking = false;
 
 function preload() {
-  loadTable("./transcription_.csv", "csv", "header", 
+  loadTable("transcription_.csv", "csv", "header", 
     (table) => {
       logdata = table;
       isDataLoaded = true;
       console.log("CSV data loaded successfully");
     },
-    (error) => console.error("Failed to load CSV:", error),
-    'utf-8'
+    (error) => console.error("Failed to load CSV:", error)
   );
   
   soundFormats('mp3');
-  yoshiSound = loadSound("./yoshi_bgm.mp3", 
+  yoshiSound = loadSound("yoshi_bgm.mp3", 
     () => console.log("yoshi_bgm.mp3 loaded successfully"),
     (err) => console.error("Failed to load yoshi_bgm.mp3:", err)
   );
-  uwaSound = loadSound("./uwa_bgm.mp3", 
+  uwaSound = loadSound("uwa_bgm.mp3", 
     () => console.log("uwa_bgm.mp3 loaded successfully"),
     (err) => console.error("Failed to load uwa_bgm.mp3:", err)
   );
@@ -40,61 +39,43 @@ function preload() {
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
-  background(200);
+  background(220);
   
   audioContext = getAudioContext();
   
   input = createFileInput(handleFile);
-  input.position(0, 0);
+  input.position(10, 10);
   
   playPauseButton = createButton('Play');
-  playPauseButton.position(0, 30);
+  playPauseButton.position(10, 40);
   playPauseButton.mousePressed(togglePlayback);
   
-  soundToggleButton = createButton('Toggle Sound');
-  soundToggleButton.position(60, 30);
-  soundToggleButton.mousePressed(toggleSound);
+  soundToggleButton = createButton('Initialize/Toggle Sound');
+  soundToggleButton.position(70, 40);
+  soundToggleButton.mousePressed(initializeOrToggleSound);
   updateSoundToggleButtonColor();
   
-  let initAudioButton = createButton('Initialize Audio');
-  initAudioButton.position(180, 30);
-  initAudioButton.mousePressed(initializeAudio);
-  
   seekSlider = createSlider(0, 100, 0, 0.1);
-  seekSlider.position(0, 60);
+  seekSlider.position(10, 100);
   seekSlider.style('width', '300px');
   seekSlider.input(userSeeking);
   seekSlider.changed(userSeeked);
   
+  volumeSlider = createSlider(0, 1, 0.5, 0.01);
+  volumeSlider.position(10, 140);
+  volumeSlider.style('width', '150px');
+  volumeSlider.input(adjustVolume);
+  
+  drawUILabels();
+  
   noLoop();
 }
 
-function initializeAudio() {
-  userStartAudio().then(() => {
-    console.log('Audio initialized successfully');
-    isAudioInitialized = true;
-    updateSoundToggleButtonColor();
-  }).catch(err => {
-    console.error('Failed to initialize audio:', err);
-  });
-}
-
-function toggleSound() {
-  isSoundEnabled = !isSoundEnabled;
-  if (!isSoundEnabled) {
-    stopSounds();
-  }
-  updateSoundToggleButtonColor();
-}
-
-function updateSoundToggleButtonColor() {
-  if (isAudioInitialized && isSoundEnabled) {
-    soundToggleButton.style('background-color', '#4CAF50');  // Green when sound is on
-    soundToggleButton.style('color', 'white');
-  } else {
-    soundToggleButton.style('background-color', '#f44336');  // Red when sound is off
-    soundToggleButton.style('color', 'white');
-  }
+function drawUILabels() {
+  fill(0);
+  textSize(16);
+  text("Seek:", 10, 95);
+  text("Volume:", 10, 135);
 }
 
 function handleFile(file) {
@@ -114,19 +95,61 @@ function vidLoad() {
 }
 
 function resizeVideo() {
-  var ratio = width / height;
-  var fratio = film.width / film.height;
-  if (ratio > fratio) {
-    fh = height;
-    fw = film.width * (height / film.height);
-    fy = 0;
-    fx = width / 2 - fw / 2;
+  let margin = 150; // UIとテキスト表示用の余白
+  let maxWidth = width;
+  let maxHeight = height - margin;
+  let videoRatio = film.width / film.height;
+  let screenRatio = maxWidth / maxHeight;
+
+  if (videoRatio > screenRatio) {
+    fw = maxWidth;
+    fh = fw / videoRatio;
   } else {
-    fw = width;
-    fh = film.height * (width / film.width);
-    fy = height / 2 - fh / 2;
-    fx = 0;
+    fh = maxHeight;
+    fw = fh * videoRatio;
   }
+
+  fx = (width - fw) / 2;
+  fy = (height - margin - fh) / 2;
+}
+
+function initializeOrToggleSound() {
+  if (!isAudioInitialized) {
+    userStartAudio().then(() => {
+      console.log('Audio initialized successfully');
+      isAudioInitialized = true;
+      isSoundEnabled = true;
+      updateSoundToggleButtonColor();
+    }).catch(err => {
+      console.error('Failed to initialize audio:', err);
+    });
+  } else {
+    toggleSound();
+  }
+}
+
+function toggleSound() {
+  isSoundEnabled = !isSoundEnabled;
+  if (!isSoundEnabled) {
+    stopSounds();
+  }
+  updateSoundToggleButtonColor();
+}
+
+function updateSoundToggleButtonColor() {
+  if (isAudioInitialized && isSoundEnabled) {
+    soundToggleButton.style('background-color', '#4CAF50');
+    soundToggleButton.style('color', 'white');
+  } else {
+    soundToggleButton.style('background-color', '#f44336');
+    soundToggleButton.style('color', 'white');
+  }
+}
+
+function adjustVolume() {
+  let volume = volumeSlider.value();
+  yoshiSound.setVolume(volume);
+  uwaSound.setVolume(volume);
 }
 
 function togglePlayback() {
@@ -168,7 +191,7 @@ function userSeeked() {
   if (isVideoLoaded) {
     let seekTime = seekSlider.value();
     film.time(seekTime);
-    currentRow = 0;  // Reset the current row
+    currentRow = 0;
     stopSounds();
     isUserSeeking = false;
     if (!film.elt.paused) {
@@ -180,7 +203,12 @@ function userSeeked() {
 function draw() {
   if (!isVideoLoaded || !isDataLoaded) return;
   
-  background(0);
+  // Clear video area
+  fill(220);
+  noStroke();
+  rect(fx, fy, fw, fh);
+  
+  // Draw video
   image(film, fx, fy, fw, fh);
   
   let currentTime = film.time();
@@ -189,6 +217,11 @@ function draw() {
     seekSlider.value(currentTime);
   }
   
+  // Clear info text area
+  fill(220);
+  noStroke();
+  rect(0, height - 120, width, 120);
+  
   if (logdata && currentRow < logdata.getRowCount()) {
     let startTime = logdata.getNum(currentRow, 0);
     let endTime = logdata.getNum(currentRow, 1);
@@ -196,18 +229,27 @@ function draw() {
     
     if (currentTime >= startTime && currentTime < endTime) {
       playSoundBasedOnText(currentContent);
-      fill(255);
-      textSize(20);
-      text(`Current content: ${currentContent}`, 30, 120);
+      
+      // カレントコメントの背景を描画
+      fill(255, 255, 200);  // 薄い黄色
+      noStroke();
+      rect(25, height - 110, width - 50, 30);
+      
+      // カレントコメントのテキストを描画
+      fill(0);
+      textSize(18);
+      text(`Current content: ${currentContent}`, 30, height - 90);
     } else if (currentTime >= endTime) {
       currentRow++;
       stopSounds();
     }
   }
   
-  fill(255);
+  // Update info text
+  fill(0);
   textSize(16);
-  text(`Current time: ${currentTime.toFixed(2)}`, 30, 150);
+  text(`Current time: ${currentTime.toFixed(2)}`, 30, height - 50);
+  text(`Volume: ${volumeSlider.value().toFixed(2)}`, 30, height - 30);
 }
 
 function playSoundBasedOnText(content) {
@@ -223,6 +265,7 @@ function playSoundBasedOnText(content) {
   if (newSound && newSound !== currentSound) {
     stopSounds();
     newSound.loop();
+    newSound.setVolume(volumeSlider.value());
     currentSound = newSound;
     updateSoundToggleButtonColor();
   }
@@ -240,4 +283,5 @@ function windowResized() {
   if (isVideoLoaded) {
     resizeVideo();
   }
+  drawUILabels();
 }
