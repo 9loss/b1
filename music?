@@ -8,12 +8,12 @@ function preload(){
     img[i]=loadImage("./p5jsDaiImg/"+i+".jpg");
   }
   
-  logdata= loadTable('/p5jsDaiMvEmotionLog.csv','csv','header');
+  logdata= loadTable('/transcription_.csv','csv','header');
 }
 
 function preload() {
-  sound = loadSound('.mp3')
-  sound2 = loadSound('.mp3')
+  sound = loadSound('yoshi_bgm.mp3')
+  sound2 = loadSound('uwa_bgm.mp3')
 }
   
 function setup() {
@@ -29,13 +29,13 @@ function draw(){
    text(logdata.get(p,3),30,30);
   text(p,100,100);
   
-  let emotion = logdata.get(p,3);
-if (emotion=="緊張"){
- sound.play()
+  let script = logdata.get(p,3);
+if (script=="よし"){
+ sound[1].play()
  frameRate(1);
 }else if
-  (emotion=="恐怖"){
-    sound2.play()
+  (script=="うわ"){
+    sound[2].play()
     frameRate(1);
  }else{
   tint(255,255,255);
