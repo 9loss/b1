@@ -11,6 +11,9 @@ let currentContent = "";
 let isUserSeeking = false;
 let isSpeedEnabled = true;
 let currentSpeed = 1;
+let markers = [];
+let seekBarHeight = 10;
+let seekBarY;
 
 function preload() {
   loadTable("transcription_.csv", "csv", "header", 
@@ -18,6 +21,7 @@ function preload() {
       logdata = table;
       isDataLoaded = true;
       console.log("CSV data loaded successfully");
+      createMarkers();
     },
     (error) => console.error("Failed to load CSV:", error)
   );
@@ -39,9 +43,11 @@ function setup() {
   speedToggleButton.mousePressed(toggleSpeed);
   updateSpeedButtonAppearance();
   
+  seekBarY = height - 70;
   seekSlider = createSlider(0, 100, 0, 0.1);
-  seekSlider.position(10, 100);
-  seekSlider.style('width', '300px');
+  seekSlider.position(10, seekBarY);
+  seekSlider.style('width', `${width - 20}px`);
+  seekSlider.style('opacity', '0');  // スライダーを非表示にする
   seekSlider.input(userSeeking);
   seekSlider.changed(userSeeked);
   
@@ -50,10 +56,21 @@ function setup() {
   noLoop();
 }
 
+function createMarkers() {
+  for (let i = 0; i < logdata.getRowCount(); i++) {
+    let content = logdata.getString(i, 2);
+    if (content.includes("うわ") || content.includes("よし")) {
+      markers.push({
+        time: logdata.getNum(i, 0),
+        type: content.includes("うわ") ? "うわ" : "よし"
+      });
+    }
+  }
+}
+
 function drawUILabels() {
   fill(0);
   textSize(16);
-  text("Seek:", 10, 95);
 }
 
 function handleFile(file) {
@@ -147,17 +164,33 @@ function updateSpeed() {
 
 function userSeeking() {
   isUserSeeking = true;
+  updateSeekPosition();
 }
 
 function userSeeked() {
-  if (isVideoLoaded) {
-    let seekTime = seekSlider.value();
-    film.time(seekTime);
-    currentRow = 0;
-    isUserSeeking = false;
-    if (!film.elt.paused) {
-      loop();
-    }
+  isUserSeeking = false;
+  updateSeekPosition();
+  if (!film.elt.paused) {
+    loop();
+  }
+}
+
+function updateSeekPosition() {
+  let seekX = constrain(mouseX, 10, width - 10);
+  let seekTime = map(seekX, 10, width - 10, 0, film.duration());
+  film.time(seekTime);
+  currentRow = 0;  // 字幕の位置をリセット
+}
+
+function mouseDragged() {
+  if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
+    updateSeekPosition();
+  }
+}
+
+function mousePressed() {
+  if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
+    updateSeekPosition();
   }
 }
 
@@ -176,6 +209,9 @@ function draw() {
   
   // Draw the video
   image(film, fx, fy, fw, fh);
+  
+  // Draw seek bar
+  drawSeekBar();
   
   if (logdata && currentRow < logdata.getRowCount()) {
     let startTime = logdata.getNum(currentRow, 0);
@@ -208,8 +244,40 @@ function draw() {
   // 情報テキストを更新
   fill(0);
   textSize(16);
-  text(`Current time: ${currentTime.toFixed(2)}`, 30, height - 50);
-  text(`Current speed: ${currentSpeed}x`, 30, height - 30);
+  text(`Current time: ${currentTime.toFixed(2)}`, 30, height - 30);
+  text(`Current speed: ${currentSpeed}x`, 200, height - 30);
+}
+
+function drawSeekBar() {
+  let barWidth = width - 20;
+  let currentPosition = map(film.time(), 0, film.duration(), 0, barWidth);
+
+  // バーの背景
+  noStroke();
+  fill(200);
+  rect(10, seekBarY, barWidth, seekBarHeight, seekBarHeight / 2);
+
+  // 進行状況
+  fill(100);
+  rect(10, seekBarY, currentPosition, seekBarHeight, seekBarHeight / 2);
+
+  // マーカーを描画
+  for (let marker of markers) {
+    let markerX = map(marker.time, 0, film.duration(), 10, width - 10);
+    
+    if (marker.type === "うわ") {
+      fill(0, 0, 255);  // 青
+    } else {
+      fill(255, 165, 0);  // オレンジ
+    }
+    
+    ellipse(markerX, seekBarY + seekBarHeight / 2, seekBarHeight, seekBarHeight);
+  }
+
+  // 現在位置の円
+  let circleColor = getColorFromContent(currentContent);
+  fill(circleColor);
+  ellipse(10 + currentPosition, seekBarY + seekBarHeight / 2, seekBarHeight * 1.5, seekBarHeight * 1.5);
 }
 
 function getColorFromContent(content) {
@@ -227,5 +295,8 @@ function windowResized() {
   if (isVideoLoaded) {
     resizeVideo();
   }
+  seekBarY = height - 70;
+  seekSlider.position(10, seekBarY);
+  seekSlider.style('width', `${width - 20}px`);
   drawUILabels();
 }
