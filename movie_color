@@ -1,0 +1,302 @@
+let logdata;
+let currentRow = 0;
+let isVideoLoaded = false;
+let isDataLoaded = false;
+let playPauseButton;
+let seekSlider;
+let speedToggleButton;
+let film;
+let fx, fy, fw, fh;
+let currentContent = "";
+let isUserSeeking = false;
+let isSpeedEnabled = true;
+let currentSpeed = 1;
+let markers = [];
+let seekBarHeight = 10;
+let seekBarY;
+
+function preload() {
+  loadTable("transcription_.csv", "csv", "header", 
+    (table) => {
+      logdata = table;
+      isDataLoaded = true;
+      console.log("CSV data loaded successfully");
+      createMarkers();
+    },
+    (error) => console.error("Failed to load CSV:", error)
+  );
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  background(220);
+  
+  input = createFileInput(handleFile);
+  input.position(10, 10);
+  
+  playPauseButton = createButton('Play');
+  playPauseButton.position(10, 40);
+  playPauseButton.mousePressed(togglePlayback);
+  
+  speedToggleButton = createButton('Speed: ON');
+  speedToggleButton.position(70, 40);
+  speedToggleButton.mousePressed(toggleSpeed);
+  updateSpeedButtonAppearance();
+  
+  seekBarY = height - 70;
+  seekSlider = createSlider(0, 100, 0, 0.1);
+  seekSlider.position(10, seekBarY);
+  seekSlider.style('width', `${width - 20}px`);
+  seekSlider.style('opacity', '0');  // スライダーを非表示にする
+  seekSlider.input(userSeeking);
+  seekSlider.changed(userSeeked);
+  
+  drawUILabels();
+  
+  noLoop();
+}
+
+function createMarkers() {
+  for (let i = 0; i < logdata.getRowCount(); i++) {
+    let content = logdata.getString(i, 2);
+    if (content.includes("うわ") || content.includes("よし")) {
+      markers.push({
+        time: logdata.getNum(i, 0),
+        type: content.includes("うわ") ? "うわ" : "よし"
+      });
+    }
+  }
+}
+
+function drawUILabels() {
+  fill(0);
+  textSize(16);
+}
+
+function handleFile(file) {
+  if (file.type === 'video') {
+    film = createVideo(file.data, vidLoad);
+    film.hide();
+  }
+}
+
+function vidLoad() {
+  console.log('Video loaded successfully');
+  isVideoLoaded = true;
+  resizeVideo();
+  input.hide();
+  playPauseButton.html('Play');
+  seekSlider.attribute('max', film.duration());
+}
+
+function resizeVideo() {
+  let margin = 150;
+  let maxWidth = width;
+  let maxHeight = height - margin;
+  let videoRatio = film.width / film.height;
+  let screenRatio = maxWidth / maxHeight;
+
+  if (videoRatio > screenRatio) {
+    fw = maxWidth;
+    fh = fw / videoRatio;
+  } else {
+    fh = maxHeight;
+    fw = fh * videoRatio;
+  }
+
+  fx = (width - fw) / 2;
+  fy = (height - margin - fh) / 2;
+}
+
+function togglePlayback() {
+  if (!isVideoLoaded) {
+    console.log('Video is not loaded yet. Please select a file first.');
+    return;
+  }
+  
+  if (film.elt.paused) {
+    startPlayback();
+  } else {
+    pausePlayback();
+  }
+}
+
+function startPlayback() {
+  film.play();
+  playPauseButton.html('Pause');
+  loop();
+}
+
+function pausePlayback() {
+  if (isVideoLoaded && !film.elt.paused) {
+    film.pause();
+    playPauseButton.html('Play');
+    noLoop();
+  }
+}
+
+function toggleSpeed() {
+  isSpeedEnabled = !isSpeedEnabled;
+  updateSpeedButtonAppearance();
+  updateSpeed();
+}
+
+function updateSpeedButtonAppearance() {
+  if (isSpeedEnabled) {
+    speedToggleButton.html('Speed: ON');
+    speedToggleButton.style('background-color', '#4CAF50');  // 緑色
+    speedToggleButton.style('color', 'white');
+  } else {
+    speedToggleButton.html('Speed: OFF');
+    speedToggleButton.style('background-color', '#f44336');  // 赤色
+    speedToggleButton.style('color', 'white');
+  }
+}
+
+function updateSpeed() {
+  if (isSpeedEnabled && !currentContent.includes("うわ") && !currentContent.includes("よし")) {
+    currentSpeed = 2;
+  } else {
+    currentSpeed = 1;
+  }
+  film.speed(currentSpeed);
+}
+
+function userSeeking() {
+  isUserSeeking = true;
+  updateSeekPosition();
+}
+
+function userSeeked() {
+  isUserSeeking = false;
+  updateSeekPosition();
+  if (!film.elt.paused) {
+    loop();
+  }
+}
+
+function updateSeekPosition() {
+  let seekX = constrain(mouseX, 10, width - 10);
+  let seekTime = map(seekX, 10, width - 10, 0, film.duration());
+  film.time(seekTime);
+  currentRow = 0;  // 字幕の位置をリセット
+}
+
+function mouseDragged() {
+  if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
+    updateSeekPosition();
+  }
+}
+
+function mousePressed() {
+  if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
+    updateSeekPosition();
+  }
+}
+
+function draw() {
+  if (!isVideoLoaded || !isDataLoaded) return;
+  
+  let currentTime = film.time();
+  
+  if (!isUserSeeking) {
+    seekSlider.value(currentTime);
+  }
+  
+  // Set background color based on current content
+  let bgColor = getColorFromContent(currentContent);
+  background(bgColor);
+  
+  // Draw the video
+  image(film, fx, fy, fw, fh);
+  
+  // Draw seek bar
+  drawSeekBar();
+  
+  if (logdata && currentRow < logdata.getRowCount()) {
+    let startTime = logdata.getNum(currentRow, 0);
+    let endTime = logdata.getNum(currentRow, 1);
+    
+    if (currentTime >= startTime && currentTime < endTime) {
+      currentContent = logdata.getString(currentRow, 2);
+      
+      // 現在のコンテンツの背景を描画
+      fill(255, 255, 200);  // 薄い黄色
+      noStroke();
+      rect(25, height - 110, width - 50, 30);
+      
+      // 現在のコンテンツのテキストを描画
+      fill(0);
+      textSize(18);
+      text(`Current content: ${currentContent}`, 30, height - 90);
+      
+      updateSpeed();
+    } else if (currentTime >= endTime) {
+      currentRow++;
+      currentContent = "";
+      updateSpeed();
+    }
+  } else {
+    currentContent = "";
+    updateSpeed();
+  }
+  
+  // 情報テキストを更新
+  fill(0);
+  textSize(16);
+  text(`Current time: ${currentTime.toFixed(2)}`, 30, height - 30);
+  text(`Current speed: ${currentSpeed}x`, 200, height - 30);
+}
+
+function drawSeekBar() {
+  let barWidth = width - 20;
+  let currentPosition = map(film.time(), 0, film.duration(), 0, barWidth);
+
+  // バーの背景
+  noStroke();
+  fill(200);
+  rect(10, seekBarY, barWidth, seekBarHeight, seekBarHeight / 2);
+
+  // 進行状況
+  fill(100);
+  rect(10, seekBarY, currentPosition, seekBarHeight, seekBarHeight / 2);
+
+  // マーカーを描画
+  for (let marker of markers) {
+    let markerX = map(marker.time, 0, film.duration(), 10, width - 10);
+    
+    if (marker.type === "うわ") {
+      fill(0, 0, 255);  // 青
+    } else {
+      fill(255, 165, 0);  // オレンジ
+    }
+    
+    ellipse(markerX, seekBarY + seekBarHeight / 2, seekBarHeight, seekBarHeight);
+  }
+
+  // 現在位置の円
+  let circleColor = getColorFromContent(currentContent);
+  fill(circleColor);
+  ellipse(10 + currentPosition, seekBarY + seekBarHeight / 2, seekBarHeight * 1.5, seekBarHeight * 1.5);
+}
+
+function getColorFromContent(content) {
+  if (content.includes("うわ")) {
+    return color(0, 0, 255);  // 青
+  } else if (content.includes("よし")) {
+    return color(255, 165, 0);  // オレンジ
+  } else {
+    return color(220);  // デフォルトの背景色
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  if (isVideoLoaded) {
+    resizeVideo();
+  }
+  seekBarY = height - 70;
+  seekSlider.position(10, seekBarY);
+  seekSlider.style('width', `${width - 20}px`);
+  drawUILabels();
+}
