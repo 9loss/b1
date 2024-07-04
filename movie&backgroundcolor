@@ -47,7 +47,7 @@ function setup() {
   seekSlider = createSlider(0, 100, 0, 0.1);
   seekSlider.position(10, seekBarY);
   seekSlider.style('width', `${width - 20}px`);
-  seekSlider.style('opacity', '0');  // スライダーを非表示にする
+  seekSlider.style('opacity', '0');
   seekSlider.input(userSeeking);
   seekSlider.changed(userSeeked);
   
@@ -144,11 +144,11 @@ function toggleSpeed() {
 function updateSpeedButtonAppearance() {
   if (isSpeedEnabled) {
     speedToggleButton.html('Speed: ON');
-    speedToggleButton.style('background-color', '#4CAF50');  // 緑色
+    speedToggleButton.style('background-color', '#4CAF50');
     speedToggleButton.style('color', 'white');
   } else {
     speedToggleButton.html('Speed: OFF');
-    speedToggleButton.style('background-color', '#f44336');  // 赤色
+    speedToggleButton.style('background-color', '#f44336');
     speedToggleButton.style('color', 'white');
   }
 }
@@ -179,7 +179,7 @@ function updateSeekPosition() {
   let seekX = constrain(mouseX, 10, width - 10);
   let seekTime = map(seekX, 10, width - 10, 0, film.duration());
   film.time(seekTime);
-  currentRow = 0;  // 字幕の位置をリセット
+  currentRow = 0;
 }
 
 function mouseDragged() {
@@ -203,14 +203,11 @@ function draw() {
     seekSlider.value(currentTime);
   }
   
-  // Set background color based on current content
   let bgColor = getColorFromContent(currentContent);
   background(bgColor);
   
-  // Draw the video
   image(film, fx, fy, fw, fh);
   
-  // Draw seek bar
   drawSeekBar();
   
   if (logdata && currentRow < logdata.getRowCount()) {
@@ -220,12 +217,10 @@ function draw() {
     if (currentTime >= startTime && currentTime < endTime) {
       currentContent = logdata.getString(currentRow, 2);
       
-      // 現在のコンテンツの背景を描画
-      fill(255, 255, 200);  // 薄い黄色
+      fill(255, 255, 200);
       noStroke();
       rect(25, height - 110, width - 50, 30);
       
-      // 現在のコンテンツのテキストを描画
       fill(0);
       textSize(18);
       text(`Current content: ${currentContent}`, 30, height - 90);
@@ -241,7 +236,6 @@ function draw() {
     updateSpeed();
   }
   
-  // 情報テキストを更新
   fill(0);
   textSize(16);
   text(`Current time: ${currentTime.toFixed(2)}`, 30, height - 30);
@@ -258,7 +252,7 @@ function drawSeekBar() {
   rect(10, seekBarY, barWidth, seekBarHeight, seekBarHeight / 2);
 
   // 進行状況
-  fill(100);
+  fill(255, 0, 0);  // 赤
   rect(10, seekBarY, currentPosition, seekBarHeight, seekBarHeight / 2);
 
   // マーカーを描画
@@ -277,7 +271,10 @@ function drawSeekBar() {
   // 現在位置の円
   let circleColor = getColorFromContent(currentContent);
   fill(circleColor);
+  stroke(255);
+  strokeWeight(2);
   ellipse(10 + currentPosition, seekBarY + seekBarHeight / 2, seekBarHeight * 1.5, seekBarHeight * 1.5);
+  noStroke();
 }
 
 function getColorFromContent(content) {
