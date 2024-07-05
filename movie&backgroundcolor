@@ -180,17 +180,23 @@ function updateSeekPosition() {
   let seekTime = map(seekX, 10, width - 10, 0, film.duration());
   film.time(seekTime);
   currentRow = 0;
+  
+  if (film.elt.paused) {
+    redraw();
+  }
 }
 
 function mouseDragged() {
   if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
     updateSeekPosition();
+    return false;
   }
 }
 
 function mousePressed() {
   if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
     updateSeekPosition();
+    return false;
   }
 }
 
@@ -246,29 +252,25 @@ function drawSeekBar() {
   let barWidth = width - 20;
   let currentPosition = map(film.time(), 0, film.duration(), 0, barWidth);
 
-  // バーの背景
   noStroke();
   fill(200);
   rect(10, seekBarY, barWidth, seekBarHeight, seekBarHeight / 2);
 
-  // 進行状況
-  fill(255, 0, 0);  // 赤
+  fill(255, 0, 0);
   rect(10, seekBarY, currentPosition, seekBarHeight, seekBarHeight / 2);
 
-  // マーカーを描画
   for (let marker of markers) {
     let markerX = map(marker.time, 0, film.duration(), 10, width - 10);
     
     if (marker.type === "うわ") {
-      fill(0, 0, 255);  // 青
+      fill(0, 0, 255);
     } else {
-      fill(255, 165, 0);  // オレンジ
+      fill(255, 165, 0);
     }
     
     ellipse(markerX, seekBarY + seekBarHeight / 2, seekBarHeight, seekBarHeight);
   }
 
-  // 現在位置の円
   let circleColor = getColorFromContent(currentContent);
   fill(circleColor);
   stroke(255);
@@ -279,11 +281,11 @@ function drawSeekBar() {
 
 function getColorFromContent(content) {
   if (content.includes("うわ")) {
-    return color(0, 0, 255);  // 青
+    return color(0, 0, 255);
   } else if (content.includes("よし")) {
-    return color(255, 165, 0);  // オレンジ
+    return color(255, 165, 0);
   } else {
-    return color(220);  // デフォルトの背景色
+    return color(220);
   }
 }
 
