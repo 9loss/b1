@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- p5.jsの読み込み -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+  <style>
+    body {
+      padding: 0;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <script>
+    let log_data;
+    let currentRow = 0;
+    let isVideoLoaded = false;
+    let isDataLoaded = false;
+    let playPauseButton;
+    let seekSlider;
+    let speedToggleButton;
+    let film;
+    let fx, fy, fw, fh;
+    let currentContent = "";
+    let isUserSeeking = false;
+    let isSpeedEnabled = true;
+    let currentSpeed = 1;
+    let markers = [];
+    let seekBarHeight = 10;
+    let seekBarY;
+
+    function preload() {
+      loadTable("static/transcription.csv", "csv", "header",
+        (table) => {
+          log_data = table;
+          isDataLoaded = true;
+          console.log("CSV data loaded successfully");
+          console.log("Row count:", table.getRowCount());
+          console.log("Column count:", table.getColumnCount());
+          console.log("First row:", table.getRow(0).arr);
+          createMarkers();
+        },
+        (error) => console.error("Failed to load CSV:", error)
+      );
+    }
+
+    function setup() {
+      film = createVideo(["{{ url_for('static', filename=video_filename) }}"], vidLoad);
+      film.hide();
+      createCanvas(windowWidth, windowHeight);
+      background(220);
+
+      playPauseButton = createButton('Play');
+      playPauseButton.position(10, 40);
+      playPauseButton.mousePressed(togglePlayback);
+
+      speedToggleButton = createButton('Speed: ON');
+      speedToggleButton.position(70, 40);
+      speedToggleButton.mousePressed(toggleSpeed);
+      updateSpeedButtonAppearance();
+
+      seekBarY = height - 70;
+      seekSlider = createSlider(0, 100, 0, 0.1);
+      seekSlider.position(10, seekBarY);
+      seekSlider.style('width', `${width - 20}px`);
+      seekSlider.style('opacity', '0');
+      seekSlider.input(userSeeking);
+      seekSlider.changed(userSeeked);
+
+      drawUILabels();
+
+      noLoop();
+  }
+
+  function vidLoad() {
+    console.log('Video loaded successfully');
+    isVideoLoaded = true;
+    resizeVideo();
+    playPauseButton.html('Play');
+
+    // ビデオの長さが利用可能になった後にシークバーを初期化
+    setTimeout(() => {
+      seekSlider.attribute('max', film.duration());
+      console.log('Video duration:', film.duration());
+    }, 100);
+  }
+
+  function createMarkers() {
+    for (let i = 0; i < log_data.getRowCount(); i++) {
+      let content = log_data.get(i, 2);
+      if (content && (content.includes("うわ") || content.includes("よし"))) {
+        markers.push({
+          time: log_data.get(i, 0),
+          type: content.includes("うわ") ? "うわ" : "よし"
+        });
+      }
+    }
+  }
+
+    function drawUILabels() {
+      fill(0);
+      textSize(16);
+    }
+
+    function resizeVideo() {
+      let margin = 150;
+      let maxWidth = width;
+      let maxHeight = height - margin;
+      let videoRatio = film.width / film.height;
+      let screenRatio = maxWidth / maxHeight;
+
+      if (videoRatio > screenRatio) {
+        fw = maxWidth;
+        fh = fw / videoRatio;
+      } else {
+        fh = maxHeight;
+        fw = fh * videoRatio;
+      }
+
+      fx = (width - fw) / 2;
+      fy = (height - margin - fh) / 2;
+    }
+
+    function togglePlayback() {
+      if (!isVideoLoaded) {
+        console.log('Video is not loaded yet. Please select a file first.');
+        return;
+      }
+
+      if (film.elt.paused) {
+        startPlayback();
+      } else {
+        pausePlayback();
+      }
+    }
+
+    function startPlayback() {
+      film.play();
+      playPauseButton.html('Pause');
+      loop();
+    }
+
+    function pausePlayback() {
+      if (isVideoLoaded && !film.elt.paused) {
+        film.pause();
+        playPauseButton.html('Play');
+        noLoop();
+      }
+    }
+
+    function toggleSpeed() {
+      isSpeedEnabled = !isSpeedEnabled;
+      updateSpeedButtonAppearance();
+      updateSpeed();
+    }
+
+    function updateSpeedButtonAppearance() {
+      if (isSpeedEnabled) {
+        speedToggleButton.html('Speed: ON');
+        speedToggleButton.style('background-color', '#4CAF50');
+        speedToggleButton.style('color', 'white');
+      } else {
+        speedToggleButton.html('Speed: OFF');
+        speedToggleButton.style('background-color', '#f44336');
+        speedToggleButton.style('color', 'white');
+      }
+    }
+
+    function updateSpeed() {
+      if (isSpeedEnabled && !currentContent.includes("うわ") && !currentContent.includes("よし")) {
+        currentSpeed = 2;
+      } else {
+        currentSpeed = 1;
+      }
+      film.speed(currentSpeed);
+    }
+
+    function userSeeking() {
+      isUserSeeking = true;
+      updateSeekPosition();
+    }
+
+    function userSeeked() {
+      isUserSeeking = false;
+      updateSeekPosition();
+      if (!film.elt.paused) {
+        loop();
+      }
+    }
+
+    function updateSeekPosition() {
+      let seekX = constrain(mouseX, 10, width - 10);
+      let seekTime = map(seekX, 10, width - 10, 0, film.duration());
+      film.time(seekTime);
+      currentRow = 0;
+
+      if (film.elt.paused) {
+        redraw();
+      }
+    }
+
+    function mouseDragged() {
+      if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
+        updateSeekPosition();
+        return false;
+      }
+    }
+
+    function mousePressed() {
+      if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
+        updateSeekPosition();
+        return false;
+      }
+    }
+
+    function draw() {
+      if (!isVideoLoaded || !isDataLoaded) return;
+
+      let currentTime = film.time();
+
+      if (!isUserSeeking) {
+        seekSlider.value(currentTime);
+      }
+
+      let bgColor = getColorFromContent(currentContent);
+      background(bgColor);
+
+      image(film, fx, fy, fw, fh);
+
+      drawSeekBar();
+
+      if (log_data && currentRow < log_data.getRowCount()) {
+        let startTime = log_data.getNum(currentRow, 0);
+        let endTime = log_data.getNum(currentRow, 1);
+
+        if (currentTime >= startTime && currentTime < endTime) {
+          currentContent = log_data.get(currentRow, 2);
+
+          fill(255, 255, 200);
+          noStroke();
+          rect(25, height - 110, width - 50, 30);
+
+          fill(0);
+          textSize(18);
+          text(`Current content: ${currentContent}`, 30, height - 90);
+
+          updateSpeed();
+        } else if (currentTime >= endTime) {
+          currentRow++;
+          currentContent = "";
+          updateSpeed();
+        }
+      } else {
+        currentContent = "";
+        updateSpeed();
+      }
+
+      fill(0);
+      textSize(16);
+      text(`Current time: ${currentTime.toFixed(2)}`, 30, height - 30);
+      text(`Current speed: ${currentSpeed}x`, 200, height - 30);
+    }
+
+    function drawSeekBar() {
+      let barWidth = width - 20;
+      let currentPosition = map(film.time(), 0, film.duration(), 0, barWidth);
+
+      noStroke();
+      fill(200);
+      rect(10, seekBarY, barWidth, seekBarHeight, seekBarHeight / 2);
+
+      fill(255, 0, 0);
+      rect(10, seekBarY, currentPosition, seekBarHeight, seekBarHeight / 2);
+
+      for (let marker of markers) {
+        let markerX = map(marker.time, 0, film.duration(), 10, width - 10);
+
+        if (marker.type === "うわ") {
+          fill(0, 0, 255);
+        } else {
+          fill(255, 165, 0);
+        }
+
+        ellipse(markerX, seekBarY + seekBarHeight / 2, seekBarHeight, seekBarHeight);
+      }
+
+      let circleColor = getColorFromContent(currentContent);
+      fill(circleColor);
+      stroke(255);
+      strokeWeight(2);
+      ellipse(10 + currentPosition, seekBarY + seekBarHeight / 2, seekBarHeight * 1.5, seekBarHeight * 1.5);
+      noStroke();
+    }
+
+    function getColorFromContent(content) {
+      if (content.includes("うわ")) {
+        return color(0, 0, 255);
+      } else if (content.includes("よし")) {
+        return color(255, 165, 0);
+      } else {
+        return color(220);
+      }
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      if (film) {
+        resizeVideo();
+      }
+
+      // seekSlider の位置やサイズを再設定
+      if (seekSlider) {
+        seekSlider.position(10, seekBarY);
+        seekSlider.style('width', `${width - 20}px`);
+      }
+    }
+
+  </script>
+</body>
+</html>
