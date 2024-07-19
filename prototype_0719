@@ -1,0 +1,337 @@
+let logdata;
+let currentRow = 0;
+let isVideoLoaded = false;
+let isDataLoaded = false;
+let playPauseButton, rewindButton, forwardButton;
+let speedSelect, autoSpeedCheckbox;
+let seekSlider;
+let film;
+let fx, fy, fw, fh;
+let currentContent = "";
+let isUserSeeking = false;
+let currentSpeed = 2;
+let markers = [];
+let seekBarHeight = 10;
+let seekBarY;
+let speedOptions = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+let isAutoSpeedEnabled = true;
+
+function preload() {
+  loadTable("transcription_.csv", "csv", "header", 
+    (table) => {
+      logdata = table;
+      isDataLoaded = true;
+      console.log("CSV data loaded successfully");
+      createMarkers();
+    },
+    (error) => console.error("Failed to load CSV:", error)
+  );
+}
+
+function createMarkers() {
+  for (let i = 0; i < logdata.getRowCount(); i++) {
+    let content = logdata.getString(i, 2);
+    if (content.includes("うわ") || content.includes("よし")) {
+      markers.push({
+        time: logdata.getNum(i, 0),
+        type: content.includes("うわ") ? "うわ" : "よし"
+      });
+    }
+  }
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  background(220);
+  
+  input = createFileInput(handleFile);
+  input.position(10, 10);
+  
+  // 上段のUI要素
+  playPauseButton = createButton('Play');
+  playPauseButton.position(10, 40);
+  playPauseButton.mousePressed(togglePlayback);
+  
+  rewindButton = createButton('⏪ 10s');
+  rewindButton.position(70, 40);
+  rewindButton.mousePressed(() => seekRelative(-10));
+  
+  forwardButton = createButton('10s ⏩');
+  forwardButton.position(130, 40);
+  forwardButton.mousePressed(() => seekRelative(10));
+  
+  // 下段のUI要素
+  speedSelect = createSelect();
+  speedSelect.position(10, 70);
+  for (let speed of speedOptions) {
+    speedSelect.option(speed + 'x');
+  }
+  speedSelect.selected('2x');
+  speedSelect.changed(changeSpeed);
+  
+  autoSpeedCheckbox = createCheckbox('Auto Speed', true);
+  autoSpeedCheckbox.position(70, 72);
+  autoSpeedCheckbox.changed(() => {
+    isAutoSpeedEnabled = autoSpeedCheckbox.checked();
+    updateSpeed();
+  });
+  
+  seekBarY = height - 70;
+  seekSlider = createSlider(0, 100, 0, 0.1);
+  seekSlider.position(10, seekBarY);
+  seekSlider.style('width', `${width - 20}px`);
+  seekSlider.style('opacity', '0');
+  seekSlider.input(userSeeking);
+  seekSlider.changed(userSeeked);
+  
+  drawUILabels();
+  
+  noLoop();
+}
+
+function seekRelative(seconds) {
+  if (isVideoLoaded) {
+    let newTime = constrain(film.time() + seconds, 0, film.duration());
+    film.time(newTime);
+    currentRow = 0;
+    if (film.elt.paused) {
+      redraw();
+    }
+  }
+}
+
+function drawUILabels() {
+  fill(0);
+  textSize(16);
+}
+
+function handleFile(file) {
+  if (file.type === 'video') {
+    film = createVideo(file.data, vidLoad);
+    film.hide();
+  }
+}
+
+function vidLoad() {
+  console.log('Video loaded successfully');
+  isVideoLoaded = true;
+  resizeVideo();
+  input.hide();
+  playPauseButton.html('Play');
+  seekSlider.attribute('max', film.duration());
+}
+
+function resizeVideo() {
+  let margin = 150;
+  let maxWidth = width;
+  let maxHeight = height - margin;
+  let videoRatio = film.width / film.height;
+  let screenRatio = maxWidth / maxHeight;
+
+  if (videoRatio > screenRatio) {
+    fw = maxWidth;
+    fh = fw / videoRatio;
+  } else {
+    fh = maxHeight;
+    fw = fh * videoRatio;
+  }
+
+  fx = (width - fw) / 2;
+  fy = (height - margin - fh) / 2;
+}
+
+function togglePlayback() {
+  if (!isVideoLoaded) {
+    console.log('Video is not loaded yet. Please select a file first.');
+    return;
+  }
+  
+  if (film.elt.paused) {
+    startPlayback();
+  } else {
+    pausePlayback();
+  }
+}
+
+function startPlayback() {
+  film.play();
+  playPauseButton.html('Pause');
+  loop();
+}
+
+function pausePlayback() {
+  if (isVideoLoaded && !film.elt.paused) {
+    film.pause();
+    playPauseButton.html('Play');
+    noLoop();
+  }
+}
+
+function changeSpeed() {
+  if (!isAutoSpeedEnabled) {
+    currentSpeed = parseFloat(speedSelect.value());
+    film.speed(currentSpeed);
+  }
+}
+
+function updateSpeed() {
+  if (isAutoSpeedEnabled) {
+    if (currentContent.includes("うわ") || currentContent.includes("よし")) {
+      currentSpeed = 1;
+    } else {
+      currentSpeed = 2;
+    }
+    speedSelect.selected(currentSpeed + 'x');
+  } else {
+    currentSpeed = parseFloat(speedSelect.value());
+  }
+  if (isVideoLoaded) {
+    film.speed(currentSpeed);
+  }
+}
+
+function userSeeking() {
+  isUserSeeking = true;
+  updateSeekPosition();
+}
+
+function userSeeked() {
+  isUserSeeking = false;
+  updateSeekPosition();
+  if (!film.elt.paused) {
+    loop();
+  }
+}
+
+function updateSeekPosition() {
+  let seekX = constrain(mouseX, 10, width - 10);
+  let seekTime = map(seekX, 10, width - 10, 0, film.duration());
+  film.time(seekTime);
+  currentRow = 0;
+  
+  if (film.elt.paused) {
+    redraw();
+  }
+}
+
+function mouseDragged() {
+  if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
+    updateSeekPosition();
+    return false;
+  }
+}
+
+function mousePressed() {
+  if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
+    updateSeekPosition();
+    return false;
+  }
+}
+
+function draw() {
+  if (!isVideoLoaded || !isDataLoaded) return;
+  
+  let currentTime = film.time();
+  
+  if (!isUserSeeking) {
+    seekSlider.value(currentTime);
+  }
+  
+  let bgColor = getColorFromContent(currentContent);
+  background(bgColor);
+  
+  image(film, fx, fy, fw, fh);
+  
+  drawSeekBar();
+  
+  if (logdata && currentRow < logdata.getRowCount()) {
+    let startTime = logdata.getNum(currentRow, 0);
+    let endTime = logdata.getNum(currentRow, 1);
+    
+    if (currentTime >= startTime && currentTime < endTime) {
+      currentContent = logdata.getString(currentRow, 2);
+      
+      fill(255, 255, 200);
+      noStroke();
+      rect(25, height - 140, width - 50, 30);
+      
+      fill(0);
+      textSize(18);
+      text(`Current content: ${currentContent}`, 30, height - 120);
+      
+      updateSpeed();
+    } else if (currentTime >= endTime) {
+      currentRow++;
+      currentContent = "";
+      updateSpeed();
+    }
+  } else {
+    currentContent = "";
+    updateSpeed();
+  }
+  
+  fill(0);
+  textSize(16);
+  text(`Current time: ${currentTime.toFixed(2)}`, 30, height - 30);
+  text(`Current speed: ${currentSpeed}x`, 200, height - 30);
+}
+
+function drawSeekBar() {
+  let barWidth = width - 20;
+  let currentPosition = map(film.time(), 0, film.duration(), 0, barWidth);
+
+  noStroke();
+  fill(200);
+  rect(10, seekBarY, barWidth, seekBarHeight, seekBarHeight / 2);
+
+  fill(255, 0, 0);
+  rect(10, seekBarY, currentPosition, seekBarHeight, seekBarHeight / 2);
+
+  for (let marker of markers) {
+    let markerX = map(marker.time, 0, film.duration(), 10, width - 10);
+    
+    if (marker.type === "うわ") {
+      fill(0, 0, 255);
+    } else {
+      fill(255, 165, 0);
+    }
+    
+    ellipse(markerX, seekBarY + seekBarHeight / 2, seekBarHeight, seekBarHeight);
+  }
+
+  let circleColor = getColorFromContent(currentContent);
+  fill(circleColor);
+  stroke(255);
+  strokeWeight(2);
+  ellipse(10 + currentPosition, seekBarY + seekBarHeight / 2, seekBarHeight * 1.5, seekBarHeight * 1.5);
+  noStroke();
+}
+
+function getColorFromContent(content) {
+  if (content.includes("うわ")) {
+    return color(0, 0, 255);
+  } else if (content.includes("よし")) {
+    return color(255, 165, 0);
+  } else {
+    return color(220);
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  if (isVideoLoaded) {
+    resizeVideo();
+  }
+  seekBarY = height - 70;
+  seekSlider.position(10, seekBarY);
+  seekSlider.style('width', `${width - 20}px`);
+  
+  // UI要素の位置を更新
+  if (playPauseButton) playPauseButton.position(10, 40);
+  if (rewindButton) rewindButton.position(70, 40);
+  if (forwardButton) forwardButton.position(130, 40);
+  if (speedSelect) speedSelect.position(10, 70);
+  if (autoSpeedCheckbox) autoSpeedCheckbox.position(70, 72);
+  
+  drawUILabels();
+}
