@@ -11,27 +11,39 @@
       padding: 0;
       margin: 0;
     }
+    select {
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
 
-  <script>
+<script>
     let log_data;
     let currentRow = 0;
     let isVideoLoaded = false;
     let isDataLoaded = false;
     let playPauseButton;
     let seekSlider;
-    let speedToggleButton;
+    let speedSelect;
+    let skipForwardButton;
+    let skipBackwardButton;
     let film;
     let fx, fy, fw, fh;
     let currentContent = "";
     let isUserSeeking = false;
-    let isSpeedEnabled = true;
     let currentSpeed = 1;
     let markers = [];
     let seekBarHeight = 10;
     let seekBarY;
+    let originalSpeed = 2;
+    let markerDuration = 1;
+    let previewCanvas;
+    let previewCtx;
+    let isPreviewVisible = false;
+    let isVideoEnded = false;
+    let blueKeyword = "{{ blue_keyword }}";  // サーバーから渡されたキーワード
+    let orangeKeyword = "{{ orange_keyword }}";  // サーバーから渡されたキーワード
 
     function preload() {
       loadTable("static/transcription.csv", "csv", "header",
@@ -39,9 +51,6 @@
           log_data = table;
           isDataLoaded = true;
           console.log("CSV data loaded successfully");
-          console.log("Row count:", table.getRowCount());
-          console.log("Column count:", table.getColumnCount());
-          console.log("First row:", table.getRow(0).arr);
           createMarkers();
         },
         (error) => console.error("Failed to load CSV:", error)
@@ -58,10 +67,26 @@
       playPauseButton.position(10, 40);
       playPauseButton.mousePressed(togglePlayback);
 
-      speedToggleButton = createButton('Speed: ON');
-      speedToggleButton.position(70, 40);
-      speedToggleButton.mousePressed(toggleSpeed);
-      updateSpeedButtonAppearance();
+      speedSelect = createSelect();
+      speedSelect.position(70, 40);
+      let speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+      for (let speed of speeds) {
+        speedSelect.option(speed + 'x', speed);
+      }
+      speedSelect.selected('2');
+      originalSpeed = 2;
+      speedSelect.changed(() => {
+        originalSpeed = parseFloat(speedSelect.value());
+        changeSpeed(originalSpeed);
+      });
+
+      skipBackwardButton = createButton('←10s');
+      skipBackwardButton.position(160, 40);
+      skipBackwardButton.mousePressed(() => skipTime(-10));
+
+      skipForwardButton = createButton('10s→');
+      skipForwardButton.position(220, 40);
+      skipForwardButton.mousePressed(() => skipTime(10));
 
       seekBarY = height - 70;
       seekSlider = createSlider(0, 100, 0, 0.1);
@@ -71,58 +96,43 @@
       seekSlider.input(userSeeking);
       seekSlider.changed(userSeeked);
 
-      drawUILabels();
-
+      film.onended(videoEnded);
       noLoop();
-  }
 
-  function vidLoad() {
-    console.log('Video loaded successfully');
-    isVideoLoaded = true;
-    resizeVideo();
-    playPauseButton.html('Play');
+      previewCanvas = document.createElement('canvas');
+      previewCanvas.width = 160;
+      previewCanvas.height = 90;
+      previewCanvas.style.position = 'absolute';
+      previewCanvas.style.display = 'none';
+      document.body.appendChild(previewCanvas);
+      previewCtx = previewCanvas.getContext('2d');
 
-    // ビデオの長さが利用可能になった後にシークバーを初期化
-    setTimeout(() => {
-      seekSlider.attribute('max', film.duration());
-      console.log('Video duration:', film.duration());
-    }, 100);
-  }
-
-  function createMarkers() {
-    for (let i = 0; i < log_data.getRowCount(); i++) {
-      let content = log_data.get(i, 2);
-      if (content && (content.includes("うわ") || content.includes("よし"))) {
-        markers.push({
-          time: log_data.get(i, 0),
-          type: content.includes("うわ") ? "うわ" : "よし"
-        });
-      }
-    }
-  }
-
-    function drawUILabels() {
-      fill(0);
-      textSize(16);
+      seekSlider.elt.addEventListener('mousemove', handleSeekBarHover);
+      seekSlider.elt.addEventListener('mouseout', hidePreview);
     }
 
-    function resizeVideo() {
-      let margin = 150;
-      let maxWidth = width;
-      let maxHeight = height - margin;
-      let videoRatio = film.width / film.height;
-      let screenRatio = maxWidth / maxHeight;
+    function vidLoad() {
+      console.log('Video loaded successfully');
+      isVideoLoaded = true;
+      resizeVideo();
+      playPauseButton.html('Play');
+      setTimeout(() => {
+        seekSlider.attribute('max', film.duration());
+        console.log('Video duration:', film.duration());
+      }, 100);
+      changeSpeed(originalSpeed);
+    }
 
-      if (videoRatio > screenRatio) {
-        fw = maxWidth;
-        fh = fw / videoRatio;
-      } else {
-        fh = maxHeight;
-        fw = fh * videoRatio;
+    function createMarkers() {
+      for (let i = 0; i < log_data.getRowCount(); i++) {
+        let content = log_data.get(i, 2);
+        if (content && (content.includes(blueKeyword) || content.includes(orangeKeyword))) {
+          markers.push({
+            time: log_data.get(i, 0),
+            type: content.includes(blueKeyword) ? blueKeyword : orangeKeyword
+          });
+        }
       }
-
-      fx = (width - fw) / 2;
-      fy = (height - margin - fh) / 2;
     }
 
     function togglePlayback() {
@@ -139,6 +149,12 @@
     }
 
     function startPlayback() {
+      if (isVideoEnded) {
+        film.time(0);
+        currentRow = 0;
+        currentContent = "";
+        isVideoEnded = false;
+      }
       film.play();
       playPauseButton.html('Pause');
       loop();
@@ -152,69 +168,62 @@
       }
     }
 
-    function toggleSpeed() {
-      isSpeedEnabled = !isSpeedEnabled;
-      updateSpeedButtonAppearance();
-      updateSpeed();
-    }
-
-    function updateSpeedButtonAppearance() {
-      if (isSpeedEnabled) {
-        speedToggleButton.html('Speed: ON');
-        speedToggleButton.style('background-color', '#4CAF50');
-        speedToggleButton.style('color', 'white');
-      } else {
-        speedToggleButton.html('Speed: OFF');
-        speedToggleButton.style('background-color', '#f44336');
-        speedToggleButton.style('color', 'white');
-      }
-    }
-
-    function updateSpeed() {
-      if (isSpeedEnabled && !currentContent.includes("うわ") && !currentContent.includes("よし")) {
-        currentSpeed = 2;
-      } else {
-        currentSpeed = 1;
-      }
+    function changeSpeed(speed) {
+      currentSpeed = speed;
       film.speed(currentSpeed);
+      speedSelect.selected(currentSpeed.toString());
+      console.log(`Speed changed to ${speed}x`);
     }
 
-    function userSeeking() {
-      isUserSeeking = true;
-      updateSeekPosition();
-    }
+    function skipTime(seconds) {
+      if (!isVideoLoaded) return;
 
-    function userSeeked() {
-      isUserSeeking = false;
-      updateSeekPosition();
-      if (!film.elt.paused) {
-        loop();
-      }
-    }
-
-    function updateSeekPosition() {
-      let seekX = constrain(mouseX, 10, width - 10);
-      let seekTime = map(seekX, 10, width - 10, 0, film.duration());
-      film.time(seekTime);
-      currentRow = 0;
+      let newTime = film.time() + seconds;
+      newTime = constrain(newTime, 0, film.duration());
+      film.time(newTime);
+      updateCurrentRow(newTime);
 
       if (film.elt.paused) {
         redraw();
       }
     }
 
-    function mouseDragged() {
-      if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
-        updateSeekPosition();
-        return false;
+    function updateCurrentRow(time) {
+      currentRow = 0;
+      while (currentRow < log_data.getRowCount() && log_data.getNum(currentRow, 1) <= time) {
+        currentRow++;
       }
+      if (currentRow > 0) currentRow--;
     }
 
-    function mousePressed() {
-      if (mouseY >= seekBarY && mouseY <= seekBarY + seekBarHeight) {
-        updateSeekPosition();
-        return false;
-      }
+    function handleSeekBarHover(event) {
+      if (!isVideoLoaded) return;
+
+      const rect = seekSlider.elt.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const previewTime = map(x, 0, rect.width, 0, film.duration());
+
+      updatePreview(previewTime);
+    }
+
+    function updatePreview(previewTime) {
+      film.time(previewTime);
+      previewCtx.drawImage(film.elt, 0, 0, previewCanvas.width, previewCanvas.height);
+
+      const rect = seekSlider.elt.getBoundingClientRect();
+      const previewX = map(previewTime, 0, film.duration(), rect.left, rect.right) - previewCanvas.width / 2;
+      const previewY = rect.top - previewCanvas.height - 10;
+
+      previewCanvas.style.left = `${previewX}px`;
+      previewCanvas.style.top = `${previewY}px`;
+      previewCanvas.style.display = 'block';
+
+      isPreviewVisible = true;
+    }
+
+    function hidePreview() {
+      previewCanvas.style.display = 'none';
+      isPreviewVisible = false;
     }
 
     function draw() {
@@ -222,7 +231,7 @@
 
       let currentTime = film.time();
 
-      if (!isUserSeeking) {
+      if (!isUserSeeking && !isPreviewVisible) {
         seekSlider.value(currentTime);
       }
 
@@ -247,22 +256,38 @@
           fill(0);
           textSize(18);
           text(`Current content: ${currentContent}`, 30, height - 90);
-
-          updateSpeed();
         } else if (currentTime >= endTime) {
           currentRow++;
           currentContent = "";
-          updateSpeed();
         }
       } else {
         currentContent = "";
-        updateSpeed();
       }
 
       fill(0);
       textSize(16);
       text(`Current time: ${currentTime.toFixed(2)}`, 30, height - 30);
       text(`Current speed: ${currentSpeed}x`, 200, height - 30);
+
+      adjustSpeedBasedOnBackground(bgColor);
+    }
+
+    function adjustSpeedBasedOnBackground(bgColor) {
+      let r = red(bgColor);
+      let g = green(bgColor);
+      let b = blue(bgColor);
+
+      if ((r === 0 && g === 0 && b === 255) || (r === 255 && g === 165 && b === 0)) {
+        // 青色またはオレンジ色の場合
+        if (currentSpeed !== 1) {
+          changeSpeed(1);
+        }
+      } else if (r === 220 && g === 220 && b === 220) {
+        // グレー（背景色なし）の場合
+        if (currentSpeed !== originalSpeed) {
+          changeSpeed(originalSpeed);
+        }
+      }
     }
 
     function drawSeekBar() {
@@ -279,7 +304,7 @@
       for (let marker of markers) {
         let markerX = map(marker.time, 0, film.duration(), 10, width - 10);
 
-        if (marker.type === "うわ") {
+        if (marker.type === blueKeyword) {
           fill(0, 0, 255);
         } else {
           fill(255, 165, 0);
@@ -297,13 +322,45 @@
     }
 
     function getColorFromContent(content) {
-      if (content.includes("うわ")) {
+      if (content.includes(blueKeyword)) {
         return color(0, 0, 255);
-      } else if (content.includes("よし")) {
+      } else if (content.includes(orangeKeyword)) {
         return color(255, 165, 0);
       } else {
         return color(220);
       }
+    }
+
+    function userSeeking() {
+      isUserSeeking = true;
+      updateSeekPosition();
+    }
+
+    function userSeeked() {
+      isUserSeeking = false;
+      updateSeekPosition();
+      if (!film.elt.paused) {
+        loop();
+      }
+    }
+
+    function updateSeekPosition() {
+      let seekTime = seekSlider.value();
+      film.time(seekTime);
+      updateCurrentRow(seekTime);
+
+      if (film.elt.paused) {
+        redraw();
+      }
+    }
+
+    function videoEnded() {
+      console.log('Video playback ended');
+      pausePlayback();
+      currentRow = 0;
+      currentContent = "";
+      isVideoEnded = true;
+      redraw();
     }
 
     function windowResized() {
@@ -312,13 +369,38 @@
         resizeVideo();
       }
 
-      // seekSlider の位置やサイズを再設定
+      seekBarY = height - 70;
       if (seekSlider) {
         seekSlider.position(10, seekBarY);
         seekSlider.style('width', `${width - 20}px`);
       }
+
+      if (speedSelect && skipBackwardButton && skipForwardButton) {
+        speedSelect.position(70, 40);
+        skipBackwardButton.position(160, 40);
+        skipForwardButton.position(220, 40);
+      }
     }
 
-  </script>
+    function resizeVideo() {
+      let margin = 150;
+      let maxWidth = width;
+      let maxHeight = height - margin;
+      let videoRatio = film.width / film.height;
+      let screenRatio = maxWidth / maxHeight;
+
+      if (videoRatio > screenRatio) {
+        fw = maxWidth;
+        fh = fw / videoRatio;
+      } else {
+        fh = maxHeight;
+        fw = fh * videoRatio;
+      }
+
+      fx = (width - fw) / 2;
+      fy = (height - margin - fh) / 2;
+    }
+</script>
+
 </body>
 </html>

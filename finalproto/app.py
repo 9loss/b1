@@ -12,12 +12,15 @@ ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi'}
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 @app.route('/')
 def index():
     return render_template('index.html')
+
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -30,19 +33,34 @@ def upload_file():
         filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(file_path)
+
+        # キーワードを取得
+        blue_keyword = request.form.get('blue_keyword', '')
+        orange_keyword = request.form.get('orange_keyword', '')
+
         process_video(file_path)  # ビデオ処理を行う
-        return redirect(url_for('video_page', video_filename=filename))
+        return redirect(
+            url_for('video_page', video_filename=filename, blue_keyword=blue_keyword, orange_keyword=orange_keyword))
+
 
 @app.route('/<video_filename>')
 def video_page(video_filename):
     csv_file_path = os.path.join('static', 'transcription.csv')
     if not os.path.exists(csv_file_path):
         return "Video is still being processed. Please wait and refresh the page."
-    return render_template('dealed_movie.html', video_filename=video_filename)
+
+    # キーワードをURLパラメータから取得
+    blue_keyword = request.args.get('blue_keyword', '')
+    orange_keyword = request.args.get('orange_keyword', '')
+
+    return render_template('dealed_movie.html', video_filename=video_filename, blue_keyword=blue_keyword,
+                           orange_keyword=orange_keyword)
+
 
 @app.route('/transcription')
 def transcription():
     return send_from_directory('static', 'transcription.csv')
+
 
 def process_video(video_file_path):
     # MP4ファイルから音声を抽出してWAV形式に変換
@@ -55,7 +73,7 @@ def process_video(video_file_path):
     audio_segment = AudioSegment.from_wav(audio_file_path)
 
     # 無音部分を検出
-    silence_thresh = audio_segment.dBFS - 18
+    silence_thresh = audio_segment.dBFS - 14
     chunks = silence.split_on_silence(audio_segment, min_silence_len=500, silence_thresh=silence_thresh)
 
     # 音声認識の準備
@@ -96,7 +114,9 @@ def process_video(video_file_path):
     df.to_csv(csv_file_path, index=False)
 
     os.remove(audio_file_path)
+
+
 if __name__ == '__main__':
     if not os.path.exists(UPLOAD_FOLDER):
         os.makedirs(UPLOAD_FOLDER)
-app.run(debug=True)
+    app.run(debug=True)
